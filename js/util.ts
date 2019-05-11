@@ -1,26 +1,29 @@
-// Copyright 2018 the Deno authors. All rights reserved. MIT license.
+// Copyright 2018-2019 the Deno authors. All rights reserved. MIT license.
 import { TypedArray } from "./types";
 
 let logDebug = false;
+let logSource = "JS";
 
 // @internal
-export function setLogDebug(debug: boolean): void {
+export function setLogDebug(debug: boolean, source?: string): void {
   logDebug = debug;
+  if (source) {
+    logSource = source;
+  }
 }
 
 /** Debug logging for deno.
  * Enable with the `--log-debug` or `-D` command line flag.
  * @internal
  */
-// tslint:disable-next-line:no-any
-export function log(...args: any[]): void {
+export function log(...args: unknown[]): void {
   if (logDebug) {
-    console.log("DEBUG JS -", ...args);
+    console.log(`DEBUG ${logSource} -`, ...args);
   }
 }
 
 // @internal
-export function assert(cond: boolean, msg = "assert") {
+export function assert(cond: boolean, msg = "assert"): void {
   if (!cond) {
     throw Error(msg);
   }
@@ -58,7 +61,7 @@ export function arrayToStr(ui8: Uint8Array): string {
 
 export interface ResolvableMethods<T> {
   resolve: (value?: T | PromiseLike<T>) => void;
-  // tslint:disable-next-line:no-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   reject: (reason?: any) => void;
 }
 
@@ -68,9 +71,11 @@ export type Resolvable<T> = Promise<T> & ResolvableMethods<T>;
 // @internal
 export function createResolvable<T>(): Resolvable<T> {
   let methods: ResolvableMethods<T>;
-  const promise = new Promise<T>((resolve, reject) => {
-    methods = { resolve, reject };
-  });
+  const promise = new Promise<T>(
+    (resolve, reject): void => {
+      methods = { resolve, reject };
+    }
+  );
   // TypeScript doesn't know that the Promise callback occurs synchronously
   // therefore use of not null assertion (`!`)
   return Object.assign(promise, methods!) as Resolvable<T>;
@@ -89,9 +94,12 @@ export function unreachable(): never {
 // @internal
 export function hexdump(u8: Uint8Array): string {
   return Array.prototype.map
-    .call(u8, (x: number) => {
-      return ("00" + x.toString(16)).slice(-2);
-    })
+    .call(
+      u8,
+      (x: number): string => {
+        return ("00" + x.toString(16)).slice(-2);
+      }
+    )
     .join(" ");
 }
 
@@ -103,30 +111,6 @@ export function containsOnlyASCII(str: string): boolean {
   return /^[\x00-\x7F]*$/.test(str);
 }
 
-// @internal
-export interface Deferred {
-  promise: Promise<void>;
-  resolve: Function;
-  reject: Function;
-}
-
-/** Create a wrapper around a promise that could be resolved externally. */
-// @internal
-export function deferred(): Deferred {
-  let resolve: Function | undefined;
-  let reject: Function | undefined;
-  const promise = new Promise<void>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return {
-    promise,
-    resolve: resolve!,
-    reject: reject!
-  };
-}
-
-// tslint:disable-next-line:variable-name
 const TypedArrayConstructor = Object.getPrototypeOf(Uint8Array);
 export function isTypedArray(x: unknown): x is TypedArray {
   return x instanceof TypedArrayConstructor;
@@ -136,4 +120,90 @@ export function isTypedArray(x: unknown): x is TypedArray {
 // @internal
 export function isObject(o: unknown): o is object {
   return o != null && typeof o === "object";
+}
+
+// @internal
+export function requiredArguments(
+  name: string,
+  length: number,
+  required: number
+): void {
+  if (length < required) {
+    const errMsg = `${name} requires at least ${required} argument${
+      required === 1 ? "" : "s"
+    }, but only ${length} present`;
+    throw new TypeError(errMsg);
+  }
+}
+
+// @internal
+export function immutableDefine(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  o: any,
+  p: string | number | symbol,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  value: any
+): void {
+  Object.defineProperty(o, p, {
+    value,
+    configurable: false,
+    writable: false
+  });
+}
+
+// Returns values from a WeakMap to emulate private properties in JavaScript
+export function getPrivateValue<
+  K extends object,
+  V extends object,
+  W extends keyof V
+>(instance: K, weakMap: WeakMap<K, V>, key: W): V[W] {
+  if (weakMap.has(instance)) {
+    return weakMap.get(instance)![key];
+  }
+  throw new TypeError("Illegal invocation");
+}
+
+/**
+ * Determines whether an object has a property with the specified name.
+ * Avoid calling prototype builtin `hasOwnProperty` for two reasons:
+ *
+ * 1. `hasOwnProperty` is defined on the object as something else:
+ *
+ *      const options = {
+ *        ending: 'utf8',
+ *        hasOwnProperty: 'foo'
+ *      };
+ *      options.hasOwnProperty('ending') // throws a TypeError
+ *
+ * 2. The object doesn't inherit from `Object.prototype`:
+ *
+ *       const options = Object.create(null);
+ *       options.ending = 'utf8';
+ *       options.hasOwnProperty('ending'); // throws a TypeError
+ *
+ * @param obj A Object.
+ * @param v A property name.
+ * @see https://eslint.org/docs/rules/no-prototype-builtins
+ * @internal
+ */
+export function hasOwnProperty<T>(obj: T, v: PropertyKey): boolean {
+  if (obj == null) {
+    return false;
+  }
+  return Object.prototype.hasOwnProperty.call(obj, v);
+}
+
+/**
+ * Split a number into two parts: lower 32 bit and higher 32 bit
+ * (as if the number is represented as uint64.)
+ *
+ * @param n Number to split.
+ * @internal
+ */
+export function splitNumberToParts(n: number): number[] {
+  // JS bitwise operators (OR, SHIFT) operate as if number is uint32.
+  const lower = n | 0;
+  // This is also faster than Math.floor(n / 0x100000000) in V8.
+  const higher = (n - lower) / 0x100000000;
+  return [lower, higher];
 }

@@ -1,60 +1,61 @@
-// Copyright 2018 the Deno authors. All rights reserved. MIT license.
-import { test, testPerm, assert, assertEqual } from "./test_util.ts";
-import * as deno from "deno";
+// Copyright 2018-2019 the Deno authors. All rights reserved. MIT license.
+import { testPerm, assert, assertEquals } from "./test_util.ts";
 
-testPerm({ write: true }, function renameSyncSuccess() {
-  const testDir = deno.makeTempDirSync() + "/test-rename-sync";
+testPerm({ read: true, write: true }, function renameSyncSuccess(): void {
+  const testDir = Deno.makeTempDirSync();
   const oldpath = testDir + "/oldpath";
   const newpath = testDir + "/newpath";
-  deno.mkdirSync(oldpath);
-  deno.renameSync(oldpath, newpath);
-  const newPathInfo = deno.statSync(newpath);
+  Deno.mkdirSync(oldpath);
+  Deno.renameSync(oldpath, newpath);
+  const newPathInfo = Deno.statSync(newpath);
   assert(newPathInfo.isDirectory());
 
   let caughtErr = false;
   let oldPathInfo;
 
   try {
-    oldPathInfo = deno.statSync(oldpath);
+    oldPathInfo = Deno.statSync(oldpath);
   } catch (e) {
     caughtErr = true;
-    assertEqual(e.kind, deno.ErrorKind.NotFound);
+    assertEquals(e.kind, Deno.ErrorKind.NotFound);
   }
   assert(caughtErr);
-  assertEqual(oldPathInfo, undefined);
+  assertEquals(oldPathInfo, undefined);
 });
 
-testPerm({ write: false }, function renameSyncPerm() {
+testPerm({ read: true, write: false }, function renameSyncPerm(): void {
   let err;
   try {
     const oldpath = "/oldbaddir";
     const newpath = "/newbaddir";
-    deno.renameSync(oldpath, newpath);
+    Deno.renameSync(oldpath, newpath);
   } catch (e) {
     err = e;
   }
-  assertEqual(err.kind, deno.ErrorKind.PermissionDenied);
-  assertEqual(err.name, "PermissionDenied");
+  assertEquals(err.kind, Deno.ErrorKind.PermissionDenied);
+  assertEquals(err.name, "PermissionDenied");
 });
 
-testPerm({ write: true }, async function renameSuccess() {
-  const testDir = deno.makeTempDirSync() + "/test-rename";
+testPerm({ read: true, write: true }, async function renameSuccess(): Promise<
+  void
+> {
+  const testDir = Deno.makeTempDirSync();
   const oldpath = testDir + "/oldpath";
   const newpath = testDir + "/newpath";
-  deno.mkdirSync(oldpath);
-  await deno.rename(oldpath, newpath);
-  const newPathInfo = deno.statSync(newpath);
+  Deno.mkdirSync(oldpath);
+  await Deno.rename(oldpath, newpath);
+  const newPathInfo = Deno.statSync(newpath);
   assert(newPathInfo.isDirectory());
 
   let caughtErr = false;
   let oldPathInfo;
 
   try {
-    oldPathInfo = deno.statSync(oldpath);
+    oldPathInfo = Deno.statSync(oldpath);
   } catch (e) {
     caughtErr = true;
-    assertEqual(e.kind, deno.ErrorKind.NotFound);
+    assertEquals(e.kind, Deno.ErrorKind.NotFound);
   }
   assert(caughtErr);
-  assertEqual(oldPathInfo, undefined);
+  assertEquals(oldPathInfo, undefined);
 });

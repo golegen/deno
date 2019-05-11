@@ -1,70 +1,79 @@
-// Copyright 2018 the Deno authors. All rights reserved. MIT license.
-import { test, testPerm, assert, assertEqual } from "./test_util.ts";
-import * as deno from "deno";
+// Copyright 2018-2019 the Deno authors. All rights reserved. MIT license.
+import { test, testPerm, assert, assertEquals } from "./test_util.ts";
 
-testPerm({ write: true }, function symlinkSyncSuccess() {
-  const testDir = deno.makeTempDirSync() + "/test-symlink-sync";
+testPerm({ read: true, write: true }, function symlinkSyncSuccess(): void {
+  const testDir = Deno.makeTempDirSync();
   const oldname = testDir + "/oldname";
   const newname = testDir + "/newname";
-  deno.mkdirSync(oldname);
+  Deno.mkdirSync(oldname);
   let errOnWindows;
   // Just for now, until we implement symlink for Windows.
   try {
-    deno.symlinkSync(oldname, newname);
+    Deno.symlinkSync(oldname, newname);
   } catch (e) {
     errOnWindows = e;
   }
   if (errOnWindows) {
-    assertEqual(errOnWindows.kind, deno.ErrorKind.Other);
-    assertEqual(errOnWindows.message, "Not implemented");
+    assertEquals(Deno.platform.os, "win");
+    assertEquals(errOnWindows.kind, Deno.ErrorKind.Other);
+    assertEquals(errOnWindows.message, "Not implemented");
   } else {
-    const newNameInfoLStat = deno.lstatSync(newname);
-    const newNameInfoStat = deno.statSync(newname);
+    const newNameInfoLStat = Deno.lstatSync(newname);
+    const newNameInfoStat = Deno.statSync(newname);
     assert(newNameInfoLStat.isSymlink());
     assert(newNameInfoStat.isDirectory());
   }
 });
 
-testPerm({ write: false }, function symlinkSyncPerm() {
+test(function symlinkSyncPerm(): void {
   let err;
   try {
-    deno.symlinkSync("oldbaddir", "newbaddir");
+    Deno.symlinkSync("oldbaddir", "newbaddir");
   } catch (e) {
     err = e;
   }
-  assertEqual(err.kind, deno.ErrorKind.PermissionDenied);
-  assertEqual(err.name, "PermissionDenied");
+  assertEquals(err.kind, Deno.ErrorKind.PermissionDenied);
+  assertEquals(err.name, "PermissionDenied");
 });
 
 // Just for now, until we implement symlink for Windows.
-testPerm({ write: true }, function symlinkSyncNotImplemented() {
+// Symlink with type should succeed on other platforms with type ignored
+testPerm({ write: true }, function symlinkSyncNotImplemented(): void {
+  const testDir = Deno.makeTempDirSync();
+  const oldname = testDir + "/oldname";
+  const newname = testDir + "/newname";
   let err;
   try {
-    deno.symlinkSync("oldname", "newname", "dir");
+    Deno.symlinkSync(oldname, newname, "dir");
   } catch (e) {
     err = e;
   }
-  assertEqual(err.message, "Not implemented");
+  if (err) {
+    assertEquals(Deno.platform.os, "win");
+    assertEquals(err.message, "Not implemented");
+  }
 });
 
-testPerm({ write: true }, async function symlinkSuccess() {
-  const testDir = deno.makeTempDirSync() + "/test-symlink";
+testPerm({ read: true, write: true }, async function symlinkSuccess(): Promise<
+  void
+> {
+  const testDir = Deno.makeTempDirSync();
   const oldname = testDir + "/oldname";
   const newname = testDir + "/newname";
-  deno.mkdirSync(oldname);
+  Deno.mkdirSync(oldname);
   let errOnWindows;
   // Just for now, until we implement symlink for Windows.
   try {
-    await deno.symlink(oldname, newname);
+    await Deno.symlink(oldname, newname);
   } catch (e) {
     errOnWindows = e;
   }
   if (errOnWindows) {
-    assertEqual(errOnWindows.kind, deno.ErrorKind.Other);
-    assertEqual(errOnWindows.message, "Not implemented");
+    assertEquals(errOnWindows.kind, Deno.ErrorKind.Other);
+    assertEquals(errOnWindows.message, "Not implemented");
   } else {
-    const newNameInfoLStat = deno.lstatSync(newname);
-    const newNameInfoStat = deno.statSync(newname);
+    const newNameInfoLStat = Deno.lstatSync(newname);
+    const newNameInfoStat = Deno.statSync(newname);
     assert(newNameInfoLStat.isSymlink());
     assert(newNameInfoStat.isDirectory());
   }

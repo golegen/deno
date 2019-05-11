@@ -1,4 +1,4 @@
-# Copyright 2018 the Deno authors. All rights reserved. MIT license.
+# Copyright 2018-2019 the Deno authors. All rights reserved. MIT license.
 from util import pattern_match, parse_exit_code, shell_quote_win
 import util
 import os
@@ -21,7 +21,8 @@ def pattern_match_test():
     # Iterate through the fixture lists, testing each one
     for (pattern, string, expected) in fixtures:
         actual = pattern_match(pattern, string)
-        assert expected == actual, "expected %s for\nExpected:\n%s\nTo equal actual:\n%s" % (
+        assert expected == actual, \
+            "expected %s for\nExpected:\n%s\nTo equal actual:\n%s" % (
             expected, pattern, string)
 
     assert pattern_match("foo[BAR]baz", "foobarbaz",
@@ -47,49 +48,28 @@ def shell_quote_win_test():
         'a"b""c\\d\\"e\\\\')
 
 
-def parse_unit_test_output_test():
-    print "Testing util.parse_unit_test_output()..."
-    # This is an example of a successful unit test output.
-    output = open(
-        os.path.join(util.root_path, "tools/testdata/unit_test_output1.txt"))
-    (actual, expected) = util.parse_unit_test_output(output, False)
-    assert actual == 96
-    assert expected == 96
-
-    # This is an example of a silently dying unit test.
-    output = open(
-        os.path.join(util.root_path, "tools/testdata/unit_test_output2.txt"))
-    (actual, expected) = util.parse_unit_test_output(output, False)
-    assert actual == None
-    assert expected == 96
-
-    # This is an example of compiling before successful unit tests.
-    output = open(
-        os.path.join(util.root_path, "tools/testdata/unit_test_output3.txt"))
-    (actual, expected) = util.parse_unit_test_output(output, False)
-    assert actual == 96
-    assert expected == 96
-
-    # Check what happens on empty output.
-    from StringIO import StringIO
-    output = StringIO("\n\n\n")
-    (actual, expected) = util.parse_unit_test_output(output, False)
-    assert actual == None
-    assert expected == None
-
-
 def parse_wrk_output_test():
     print "Testing util.parse_wrk_output_test()..."
     f = open(os.path.join(util.root_path, "tools/testdata/wrk1.txt"))
-    req_per_sec = util.parse_wrk_output(f.read())
-    assert req_per_sec == 1837
+    stats = util.parse_wrk_output(f.read())
+    assert stats['req_per_sec'] == 1837
+    assert stats['max_latency'] == 34.96
+
+    f2 = open(os.path.join(util.root_path, "tools/testdata/wrk2.txt"))
+    stats2 = util.parse_wrk_output(f2.read())
+    assert stats2['req_per_sec'] == 53435
+    assert stats2['max_latency'] == 0.00125
+
+    f3 = open(os.path.join(util.root_path, "tools/testdata/wrk3.txt"))
+    stats3 = util.parse_wrk_output(f3.read())
+    assert stats3['req_per_sec'] == 96037
+    assert stats3['max_latency'] == 1630.0
 
 
 def util_test():
     pattern_match_test()
     parse_exit_code_test()
     shell_quote_win_test()
-    parse_unit_test_output_test()
     parse_wrk_output_test()
 
 

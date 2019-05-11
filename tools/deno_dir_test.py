@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright 2018 the Deno authors. All rights reserved. MIT license.
+# Copyright 2018-2019 the Deno authors. All rights reserved. MIT license.
 # Check deno dir is created properly
 # Usage: deno_dir_test.py [path to deno dir]
 import os
@@ -35,14 +35,17 @@ def deno_dir_test(deno_exe, deno_dir):
 
 
 def run_deno(deno_exe, deno_dir=None):
-    cmd = [deno_exe, "tests/002_hello.ts"]
+    cmd = [deno_exe, "run", "tests/002_hello.ts"]
     deno_dir_env = {"DENO_DIR": deno_dir} if deno_dir is not None else None
     run(cmd, quiet=True, env=deno_dir_env)
 
 
+USAGE = "./tools/deno_dir_test.py target/debug/deno target/debug/.deno_dir"
+
+
 def main(argv):
     if len(sys.argv) != 3:
-        print "Usage ./tools/deno_dir_test.py target/debug/deno target/debug/.deno_dir"
+        print "Usage: " + USAGE
         sys.exit(1)
     deno_dir_test(argv[1], argv[2])
 

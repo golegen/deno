@@ -1,16 +1,11 @@
+# Copyright 2018-2019 the Deno authors. All rights reserved. MIT license.
 import sys
-from util import run
+import os
+from util import run, root_path
 from third_party import tp, google_env
 
 
-def download_v8_prebuilt():
-    if sys.platform == 'win32':
-        sha1_file = "prebuilt/win/v8.lib.sha1"
-    elif sys.platform.startswith('linux'):
-        sha1_file = "prebuilt/linux64/libv8.a.sha1"
-    elif sys.platform == 'darwin':
-        sha1_file = "prebuilt/mac/libv8.a.sha1"
-
+def download_prebuilt(sha1_file):
     run([
         "python",
         tp('depot_tools/download_from_google_storage.py'),
@@ -23,9 +18,23 @@ def download_v8_prebuilt():
         env=google_env())
 
 
-def load():
-    download_v8_prebuilt()
+def load_sccache():
+    if sys.platform == 'win32':
+        p = "prebuilt/win/sccache.exe"
+    elif sys.platform.startswith('linux'):
+        p = "prebuilt/linux64/sccache"
+    elif sys.platform == 'darwin':
+        p = "prebuilt/mac/sccache"
+    download_prebuilt(p + ".sha1")
+    return os.path.join(root_path, p)
 
 
-if __name__ == '__main__':
-    sys.exit(load())
+def load_hyperfine():
+    if sys.platform == 'win32':
+        p = "prebuilt/win/hyperfine.exe"
+    elif sys.platform.startswith('linux'):
+        p = "prebuilt/linux64/hyperfine"
+    elif sys.platform == 'darwin':
+        p = "prebuilt/mac/hyperfine"
+    download_prebuilt(p + ".sha1")
+    return os.path.join(root_path, p)

@@ -1,7 +1,7 @@
-async function fn() {
+async function fn(): Promise<never> {
   throw new Error("message");
 }
-async function call() {
+async function call(): Promise<void> {
   try {
     console.log("before await fn()");
     await fn();
@@ -11,4 +11,4 @@ async function call() {
   }
   console.log("after try-catch");
 }
-call().catch(() => console.log("outer catch"));
+call().catch((): void => console.log("outer catch"));

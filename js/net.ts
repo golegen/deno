@@ -1,6 +1,6 @@
-// Copyright 2018 the Deno authors. All rights reserved. MIT license.
+// Copyright 2018-2019 the Deno authors. All rights reserved. MIT license.
 import { ReadResult, Reader, Writer, Closer } from "./io";
-import * as msg from "gen/msg_generated";
+import * as msg from "gen/cli/msg_generated";
 import { assert, notImplemented } from "./util";
 import * as dispatch from "./dispatch";
 import * as flatbuffers from "./flatbuffers";
@@ -14,7 +14,7 @@ export type Network = "tcp";
 export type Addr = string;
 
 /** A Listener is a generic network listener for stream-oriented protocols. */
-export interface Listener {
+export interface Listener extends AsyncIterator<Conn> {
   /** Waits for and resolves to the next connection to the `Listener`. */
   accept(): Promise<Conn>;
 
@@ -25,46 +25,23 @@ export interface Listener {
 
   /** Return the address of the `Listener`. */
   addr(): Addr;
+
+  [Symbol.asyncIterator](): AsyncIterator<Conn>;
 }
 
-class ListenerImpl implements Listener {
-  constructor(readonly rid: number) {}
-
-  async accept(): Promise<Conn> {
-    const builder = flatbuffers.createBuilder();
-    msg.Accept.startAccept(builder);
-    msg.Accept.addRid(builder, this.rid);
-    const inner = msg.Accept.endAccept(builder);
-    const baseRes = await dispatch.sendAsync(builder, msg.Any.Accept, inner);
-    assert(baseRes != null);
-    assert(msg.Any.NewConn === baseRes!.innerType());
-    const res = new msg.NewConn();
-    assert(baseRes!.inner(res) != null);
-    return new ConnImpl(res.rid(), res.remoteAddr()!, res.localAddr()!);
-  }
-
-  close(): void {
-    close(this.rid);
-  }
-
-  addr(): Addr {
-    return notImplemented();
-  }
+enum ShutdownMode {
+  // See http://man7.org/linux/man-pages/man2/shutdown.2.html
+  // Corresponding to SHUT_RD, SHUT_WR, SHUT_RDWR
+  Read = 0,
+  Write,
+  ReadWrite // unused
 }
 
-export interface Conn extends Reader, Writer, Closer {
-  /** The local address of the connection. */
-  localAddr: string;
-  /** The remote address of the connection. */
-  remoteAddr: string;
-  /** Shuts down (`shutdown(2)`) the reading side of the TCP connection. Most
-   * callers should just use `close()`.
-   */
-  closeRead(): void;
-  /** Shuts down (`shutdown(2)`) the writing side of the TCP connection. Most
-   * callers should just use `close()`.
-   */
-  closeWrite(): void;
+function shutdown(rid: number, how: ShutdownMode): void {
+  const builder = flatbuffers.createBuilder();
+  const inner = msg.Shutdown.createShutdown(builder, rid, how);
+  const baseRes = dispatch.sendSync(builder, msg.Any.Shutdown, inner);
+  assert(baseRes == null);
 }
 
 class ConnImpl implements Conn {
@@ -101,22 +78,55 @@ class ConnImpl implements Conn {
   }
 }
 
-enum ShutdownMode {
-  // See http://man7.org/linux/man-pages/man2/shutdown.2.html
-  // Corresponding to SHUT_RD, SHUT_WR, SHUT_RDWR
-  Read = 0,
-  Write,
-  ReadWrite // unused
+class ListenerImpl implements Listener {
+  constructor(readonly rid: number) {}
+
+  async accept(): Promise<Conn> {
+    const builder = flatbuffers.createBuilder();
+    const inner = msg.Accept.createAccept(builder, this.rid);
+    const baseRes = await dispatch.sendAsync(builder, msg.Any.Accept, inner);
+    assert(baseRes != null);
+    assert(msg.Any.NewConn === baseRes!.innerType());
+    const res = new msg.NewConn();
+    assert(baseRes!.inner(res) != null);
+    return new ConnImpl(res.rid(), res.remoteAddr()!, res.localAddr()!);
+  }
+
+  close(): void {
+    close(this.rid);
+  }
+
+  addr(): Addr {
+    return notImplemented();
+  }
+
+  async next(): Promise<IteratorResult<Conn>> {
+    return {
+      done: false,
+      value: await this.accept()
+    };
+  }
+
+  [Symbol.asyncIterator](): AsyncIterator<Conn> {
+    return this;
+  }
 }
 
-function shutdown(rid: number, how: ShutdownMode) {
-  const builder = flatbuffers.createBuilder();
-  msg.Shutdown.startShutdown(builder);
-  msg.Shutdown.addRid(builder, rid);
-  msg.Shutdown.addHow(builder, how);
-  const inner = msg.Shutdown.endShutdown(builder);
-  const baseRes = dispatch.sendSync(builder, msg.Any.Shutdown, inner);
-  assert(baseRes == null);
+export interface Conn extends Reader, Writer, Closer {
+  /** The local address of the connection. */
+  localAddr: string;
+  /** The remote address of the connection. */
+  remoteAddr: string;
+  /** The resource ID of the connection. */
+  rid: number;
+  /** Shuts down (`shutdown(2)`) the reading side of the TCP connection. Most
+   * callers should just use `close()`.
+   */
+  closeRead(): void;
+  /** Shuts down (`shutdown(2)`) the writing side of the TCP connection. Most
+   * callers should just use `close()`.
+   */
+  closeWrite(): void;
 }
 
 /** Listen announces on the local network address.
@@ -138,10 +148,7 @@ export function listen(network: Network, address: string): Listener {
   const builder = flatbuffers.createBuilder();
   const network_ = builder.createString(network);
   const address_ = builder.createString(address);
-  msg.Listen.startListen(builder);
-  msg.Listen.addNetwork(builder, network_);
-  msg.Listen.addAddress(builder, address_);
-  const inner = msg.Listen.endListen(builder);
+  const inner = msg.Listen.createListen(builder, network_, address_);
   const baseRes = dispatch.sendSync(builder, msg.Any.Listen, inner);
   assert(baseRes != null);
   assert(msg.Any.ListenRes === baseRes!.innerType());
@@ -181,10 +188,7 @@ export async function dial(network: Network, address: string): Promise<Conn> {
   const builder = flatbuffers.createBuilder();
   const network_ = builder.createString(network);
   const address_ = builder.createString(address);
-  msg.Dial.startDial(builder);
-  msg.Dial.addNetwork(builder, network_);
-  msg.Dial.addAddress(builder, address_);
-  const inner = msg.Dial.endDial(builder);
+  const inner = msg.Dial.createDial(builder, network_, address_);
   const baseRes = await dispatch.sendAsync(builder, msg.Any.Dial, inner);
   assert(baseRes != null);
   assert(msg.Any.NewConn === baseRes!.innerType());
@@ -195,8 +199,8 @@ export async function dial(network: Network, address: string): Promise<Conn> {
 
 /** **RESERVED** */
 export async function connect(
-  network: Network,
-  address: string
+  _network: Network,
+  _address: string
 ): Promise<Conn> {
   return notImplemented();
 }

@@ -1,7 +1,7 @@
-// Copyright 2018 the Deno authors. All rights reserved. MIT license.
-import { test, assert, assertEqual } from "../test_util.ts";
-import { DomIterableMixin } from "./dom_iterable.ts";
+// Copyright 2018-2019 the Deno authors. All rights reserved. MIT license.
+import { test, assert, assertEquals } from "../test_util.ts";
 
+// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
 function setup() {
   const dataSymbol = Symbol("data symbol");
   class Base {
@@ -18,21 +18,23 @@ function setup() {
 
   return {
     Base,
-    DomIterable: DomIterableMixin<string, number, typeof Base>(Base, dataSymbol)
+    // This is using an internal API we don't want published as types, so having
+    // to cast to any to "trick" TypeScript
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    DomIterable: (Deno as any).DomIterableMixin(Base, dataSymbol)
   };
 }
 
-test(function testDomIterable() {
-  // tslint:disable-next-line:variable-name
+test(function testDomIterable(): void {
   const { DomIterable, Base } = setup();
 
   const fixture: Array<[string, number]> = [["foo", 1], ["bar", 2]];
 
   const domIterable = new DomIterable(fixture);
 
-  assertEqual(Array.from(domIterable.entries()), fixture);
-  assertEqual(Array.from(domIterable.values()), [1, 2]);
-  assertEqual(Array.from(domIterable.keys()), ["foo", "bar"]);
+  assertEquals(Array.from(domIterable.entries()), fixture);
+  assertEquals(Array.from(domIterable.values()), [1, 2]);
+  assertEquals(Array.from(domIterable.keys()), ["foo", "bar"]);
 
   let result: Array<[string, number]> = [];
   for (const [key, value] of domIterable) {
@@ -40,33 +42,32 @@ test(function testDomIterable() {
     assert(value != null);
     result.push([key, value]);
   }
-  assertEqual(fixture, result);
+  assertEquals(fixture, result);
 
   result = [];
   const scope = {};
-  function callback(value, key, parent) {
-    assertEqual(parent, domIterable);
+  function callback(value, key, parent): void {
+    assertEquals(parent, domIterable);
     assert(key != null);
     assert(value != null);
     assert(this === scope);
     result.push([key, value]);
   }
   domIterable.forEach(callback, scope);
-  assertEqual(fixture, result);
+  assertEquals(fixture, result);
 
-  assertEqual(DomIterable.name, Base.name);
+  assertEquals(DomIterable.name, Base.name);
 });
 
-test(function testDomIterableScope() {
-  // tslint:disable-next-line:variable-name
+test(function testDomIterableScope(): void {
   const { DomIterable } = setup();
 
   const domIterable = new DomIterable([["foo", 1]]);
 
-  // tslint:disable-next-line:no-any
-  function checkScope(thisArg: any, expected: any) {
-    function callback() {
-      assertEqual(this, expected);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function checkScope(thisArg: any, expected: any): void {
+    function callback(): void {
+      assertEquals(this, expected);
     }
     domIterable.forEach(callback, thisArg);
   }

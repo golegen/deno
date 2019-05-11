@@ -1,6 +1,8 @@
 import { writeFileSync } from "fs";
+import { join } from "path";
 import * as prettier from "prettier";
 import {
+  InterfaceDeclaration,
   ExpressionStatement,
   NamespaceDeclarationKind,
   Project,
@@ -8,21 +10,24 @@ import {
   ts,
   Type,
   TypeGuards
-} from "ts-simple-ast";
+} from "ts-morph";
 import {
+  addInterfaceDeclaration,
   addInterfaceProperty,
   addSourceComment,
+  addTypeAlias,
   addVariableDeclaration,
-  appendSourceFile,
   checkDiagnostics,
   flattenNamespace,
   getSourceComment,
+  inlineFiles,
   loadDtsFiles,
   loadFiles,
+  log,
   logDiagnostics,
   namespaceSourceFile,
   normalizeSlashes,
-  addTypeAlias
+  setSilent
 } from "./ast_util";
 
 export interface BuildLibraryOptions {
@@ -43,6 +48,25 @@ export interface BuildLibraryOptions {
   debug?: boolean;
 
   /**
+   * An array of files that should be inlined into the library
+   */
+  inline?: string[];
+
+  /** An array of input files to be provided to the input project, relative to
+   * the basePath. */
+  inputs?: string[];
+
+  /**
+   * Path to globals file to be used I.E. `js/globals.ts`
+   */
+  additionalGlobals?: string[];
+
+  /**
+   * List of global variables to define as let instead of the default const.
+   */
+  declareAsLet?: string[];
+
+  /**
    * The path to the output library
    */
   outFile: string;
@@ -58,8 +82,7 @@ const { ModuleKind, ModuleResolutionKind, ScriptTarget } = ts;
 /**
  * A preamble which is appended to the start of the library.
  */
-// tslint:disable-next-line:max-line-length
-const libPreamble = `// Copyright 2018 the Deno authors. All rights reserved. MIT license.
+const libPreamble = `// Copyright 2018-2019 the Deno authors. All rights reserved. MIT license.
 
 /// <reference no-default-lib="true" />
 /// <reference lib="esnext" />
@@ -67,7 +90,7 @@ const libPreamble = `// Copyright 2018 the Deno authors. All rights reserved. MI
 `;
 
 // The path to the msg_generated file relative to the build path
-const MSG_GENERATED_PATH = "/gen/msg_generated.ts";
+const MSG_GENERATED_PATH = "/gen/cli/msg_generated.ts";
 
 // An array of enums we want to expose pub
 const MSG_GENERATED_ENUMS = ["ErrorKind"];
@@ -93,7 +116,9 @@ interface FlattenOptions {
   filePath: string;
   debug?: boolean;
   declarationProject: Project;
-  namespaceName: string;
+  globalInterfaceName?: string;
+  moduleName?: string;
+  namespaceName?: string;
   targetSourceFile: SourceFile;
 }
 
@@ -104,10 +129,12 @@ export function flatten({
   filePath,
   debug,
   declarationProject,
+  globalInterfaceName,
+  moduleName,
   namespaceName,
   targetSourceFile
 }: FlattenOptions): void {
-  // Flatten the source file into a single module declaration
+  // Flatten the source file into a single set of statements
   const statements = flattenNamespace({
     sourceFile: declarationProject.getSourceFileOrThrow(filePath),
     rootPath: basePath,
@@ -115,39 +142,59 @@ export function flatten({
     debug
   });
 
-  // Create the module in the target file
-  const namespace = targetSourceFile.addNamespace({
-    name: namespaceName,
-    hasDeclareKeyword: true,
-    declarationKind: NamespaceDeclarationKind.Module
-  });
+  // If a module name is specified create the module in the target file
+  if (moduleName) {
+    const namespace = targetSourceFile.addNamespace({
+      name: moduleName,
+      hasDeclareKeyword: true,
+      declarationKind: NamespaceDeclarationKind.Module
+    });
 
-  // Add the output of the flattening to the namespace
-  namespace.addStatements(statements);
+    // Add the output of the flattening to the namespace
+    namespace.addStatements(statements);
+  }
+
+  if (namespaceName) {
+    const namespace = targetSourceFile.insertNamespace(0, {
+      name: namespaceName,
+      hasDeclareKeyword: true,
+      declarationKind: NamespaceDeclarationKind.Namespace
+    });
+
+    // Add the output of the flattening to the namespace
+    namespace.addStatements(statements);
+
+    if (globalInterfaceName) {
+      // Retrieve the global interface
+      const interfaceDeclaration = targetSourceFile.getInterfaceOrThrow(
+        globalInterfaceName
+      );
+
+      // Add the namespace to the global interface
+      addInterfaceProperty(
+        interfaceDeclaration,
+        namespaceName,
+        `typeof ${namespaceName}`
+      );
+    }
+  }
 }
 
-interface MergeGlobalOptions {
-  basePath: string;
-  debug?: boolean;
-  declarationProject: Project;
-  filePath: string;
+interface PrepareFileForMergeOptions {
   globalVarName: string;
-  inputProject: Project;
   interfaceName: string;
   targetSourceFile: SourceFile;
 }
 
-/** Take a module and merge it into the global scope */
-export function mergeGlobal({
-  basePath,
-  debug,
-  declarationProject,
-  filePath,
+interface PrepareFileForMergeReturn {
+  interfaceDeclaration: InterfaceDeclaration;
+}
+
+export function prepareFileForMerge({
   globalVarName,
-  inputProject,
   interfaceName,
   targetSourceFile
-}: MergeGlobalOptions): void {
+}: PrepareFileForMergeOptions): PrepareFileForMergeReturn {
   // Add the global object interface
   const interfaceDeclaration = targetSourceFile.addInterface({
     name: interfaceName,
@@ -155,11 +202,56 @@ export function mergeGlobal({
   });
 
   // Declare the global variable
-  addVariableDeclaration(targetSourceFile, globalVarName, interfaceName, true);
+  addVariableDeclaration(
+    targetSourceFile,
+    globalVarName,
+    interfaceName,
+    true,
+    true
+  );
+
+  // `globalThis` accesses the global scope and is defined here:
+  // https://github.com/tc39/proposal-global
+  addVariableDeclaration(
+    targetSourceFile,
+    "globalThis",
+    interfaceName,
+    true,
+    true
+  );
 
   // Add self reference to the global variable
   addInterfaceProperty(interfaceDeclaration, globalVarName, interfaceName);
 
+  return {
+    interfaceDeclaration
+  };
+}
+
+interface MergeGlobalOptions extends PrepareFileForMergeOptions {
+  basePath: string;
+  debug?: boolean;
+  declarationProject: Project;
+  filePath: string;
+  ignore?: string[];
+  inputProject: Project;
+  prepareReturn: PrepareFileForMergeReturn;
+  declareAsLet?: string[];
+}
+
+/** Take a module and merge it into the global scope */
+export function mergeGlobals({
+  basePath,
+  debug,
+  declarationProject,
+  filePath,
+  globalVarName,
+  ignore,
+  inputProject,
+  targetSourceFile,
+  declareAsLet,
+  prepareReturn: { interfaceDeclaration }
+}: MergeGlobalOptions): void {
   // Retrieve source file from the input project
   const sourceFile = inputProject.getSourceFileOrThrow(filePath);
 
@@ -171,6 +263,7 @@ export function mergeGlobal({
       node: ExpressionStatement;
     }
   >();
+  const globalInterfaces: InterfaceDeclaration[] = [];
 
   // For every augmentation of the global variable in source file, we want
   // to extract the type and add it to the global variable map
@@ -195,6 +288,8 @@ export function mergeGlobal({
           }
         }
       }
+    } else if (TypeGuards.isInterfaceDeclaration(node) && node.isExported()) {
+      globalInterfaces.push(node);
     }
   });
 
@@ -205,16 +300,19 @@ export function mergeGlobal({
   // Create a global variable and add the property to the `Window` interface
   // for each mutation of the `window` variable we observed in `globals.ts`
   for (const [property, info] of globalVariables) {
-    const type = info.type.getText(info.node);
-    const typeSymbol = info.type.getSymbol();
-    if (typeSymbol) {
-      const valueDeclaration = typeSymbol.getValueDeclaration();
-      if (valueDeclaration) {
-        dependentSourceFiles.add(valueDeclaration.getSourceFile());
+    if (!(ignore && ignore.includes(property))) {
+      const type = info.type.getText(info.node);
+      const typeSymbol = info.type.getSymbol();
+      if (typeSymbol) {
+        const valueDeclaration = typeSymbol.getValueDeclaration();
+        if (valueDeclaration) {
+          dependentSourceFiles.add(valueDeclaration.getSourceFile());
+        }
       }
+      const isConst = !(declareAsLet && declareAsLet.includes(property));
+      addVariableDeclaration(targetSourceFile, property, type, isConst, true);
+      addInterfaceProperty(interfaceDeclaration, property, type);
     }
-    addVariableDeclaration(targetSourceFile, property, type, true);
-    addInterfaceProperty(interfaceDeclaration, property, type);
   }
 
   // We need to copy over any type aliases
@@ -227,6 +325,11 @@ export function mergeGlobal({
     );
   }
 
+  // We need to copy over any interfaces
+  for (const interfaceDeclaration of globalInterfaces) {
+    addInterfaceDeclaration(targetSourceFile, interfaceDeclaration);
+  }
+
   // We need to ensure that we only namespace each source file once, so we
   // will use this map for tracking that.
   const sourceFileMap = new Map<SourceFile, string>();
@@ -237,29 +340,32 @@ export function mergeGlobal({
   const importDeclarations = sourceFile.getImportDeclarations();
   const namespaces = new Set<string>();
   for (const declaration of importDeclarations) {
-    const declarationSourceFile = declaration.getModuleSpecifierSourceFile();
-    if (
-      declarationSourceFile &&
-      dependentSourceFiles.has(declarationSourceFile)
-    ) {
-      // the source file will resolve to the original `.ts` file, but the
-      // information we really want is in the emitted `.d.ts` file, so we will
-      // resolve to that file
-      const dtsFilePath = declarationSourceFile
-        .getFilePath()
-        .replace(/\.ts$/, ".d.ts");
-      const dtsSourceFile = declarationProject.getSourceFileOrThrow(
-        dtsFilePath
-      );
-      targetSourceFile.addStatements(
-        namespaceSourceFile(dtsSourceFile, {
-          debug,
-          namespace: declaration.getNamespaceImportOrThrow().getText(),
-          namespaces,
-          rootPath: basePath,
-          sourceFileMap
-        })
-      );
+    const namespaceImport = declaration.getNamespaceImport();
+    if (namespaceImport) {
+      const declarationSourceFile = declaration.getModuleSpecifierSourceFile();
+      if (
+        declarationSourceFile &&
+        dependentSourceFiles.has(declarationSourceFile)
+      ) {
+        // the source file will resolve to the original `.ts` file, but the
+        // information we really want is in the emitted `.d.ts` file, so we will
+        // resolve to that file
+        const dtsFilePath = declarationSourceFile
+          .getFilePath()
+          .replace(/\.ts$/, ".d.ts");
+        const dtsSourceFile = declarationProject.getSourceFileOrThrow(
+          dtsFilePath
+        );
+        targetSourceFile.addStatements(
+          namespaceSourceFile(dtsSourceFile, {
+            debug,
+            namespace: namespaceImport.getText(),
+            namespaces,
+            rootPath: basePath,
+            sourceFileMap
+          })
+        );
+      }
     }
   }
 
@@ -275,20 +381,35 @@ export function mergeGlobal({
 export function main({
   basePath,
   buildPath,
+  inline,
+  inputs,
+  additionalGlobals,
+  declareAsLet,
   debug,
   outFile,
   silent
-}: BuildLibraryOptions) {
-  if (!silent) {
-    console.log("-----");
-    console.log("build_lib");
-    console.log();
-    console.log(`basePath: "${basePath}"`);
-    console.log(`buildPath: "${buildPath}"`);
-    console.log(`debug: ${!!debug}`);
-    console.log(`outFile: "${outFile}"`);
-    console.log();
+}: BuildLibraryOptions): void {
+  setSilent(silent);
+  log("-----");
+  log("build_lib");
+  log();
+  log(`basePath: "${basePath}"`);
+  log(`buildPath: "${buildPath}"`);
+  if (inline && inline.length) {
+    log("inline:");
+    for (const filename of inline) {
+      log(`  "${filename}"`);
+    }
   }
+  if (inputs && inputs.length) {
+    log("inputs:");
+    for (const input of inputs) {
+      log(`  "${input}"`);
+    }
+  }
+  log(`debug: ${!!debug}`);
+  log(`outFile: "${outFile}"`);
+  log();
 
   // the inputProject will take in the TypeScript files that are internal
   // to Deno to be used to generate the library
@@ -297,10 +418,9 @@ export function main({
       baseUrl: basePath,
       declaration: true,
       emitDeclarationOnly: true,
-      lib: [],
-      module: ModuleKind.AMD,
+      lib: ["esnext"],
+      module: ModuleKind.ESNext,
       moduleResolution: ModuleResolutionKind.NodeJs,
-      noLib: true,
       paths: {
         "*": ["*", `${buildPath}/*`]
       },
@@ -314,20 +434,23 @@ export function main({
   // Add the input files we will need to generate the declarations, `globals`
   // plus any modules that are importable in the runtime need to be added here
   // plus the `lib.esnext` which is used as the base library
-  inputProject.addExistingSourceFiles([
-    `${basePath}/node_modules/typescript/lib/lib.esnext.d.ts`,
-    `${basePath}/js/deno.ts`,
-    `${basePath}/js/globals.ts`
-  ]);
+  if (inputs) {
+    inputProject.addExistingSourceFiles(
+      inputs.map(input => join(basePath, input))
+    );
+  }
 
   // emit the project, which will be only the declaration files
   const inputEmitResult = inputProject.emitToMemory();
+
+  log("Emitted input project.");
 
   const inputDiagnostics = inputEmitResult
     .getDiagnostics()
     .map(d => d.compilerObject);
   logDiagnostics(inputDiagnostics);
   if (inputDiagnostics.length) {
+    console.error("\nDiagnostics present during input project emit.\n");
     process.exit(1);
   }
 
@@ -337,8 +460,8 @@ export function main({
   const declarationProject = new Project({
     compilerOptions: {
       baseUrl: basePath,
+      lib: ["esnext"],
       moduleResolution: ModuleResolutionKind.NodeJs,
-      noLib: true,
       paths: {
         "*": ["*", `${buildPath}/*`]
       },
@@ -364,24 +487,21 @@ export function main({
 
   // the outputProject will contain the final library file we are looking to
   // build
+  const outputProjectCompilerOptions: ts.CompilerOptions = {
+    baseUrl: buildPath,
+    lib: ["esnext"],
+    moduleResolution: ModuleResolutionKind.NodeJs,
+    strict: true,
+    target: ScriptTarget.ESNext
+  };
+
   const outputProject = new Project({
-    compilerOptions: {
-      baseUrl: buildPath,
-      moduleResolution: ModuleResolutionKind.NodeJs,
-      noLib: true,
-      strict: true,
-      target: ScriptTarget.ESNext,
-      types: ["text-encoding"]
-    },
+    compilerOptions: outputProjectCompilerOptions,
     useVirtualFileSystem: true
   });
 
   // There are files we need to load into memory, so that the project "compiles"
-  loadDtsFiles(outputProject);
-  // tslint:disable-next-line:max-line-length
-  const textEncodingFilePath = `${buildPath}/node_modules/@types/text-encoding/index.d.ts`;
-  loadFiles(outputProject, [textEncodingFilePath]);
-  outputProject.addExistingSourceFileIfExists(textEncodingFilePath);
+  loadDtsFiles(outputProject, outputProjectCompilerOptions);
 
   // libDts is the final output file we are looking to build and we are not
   // actually creating it, only in memory at this stage.
@@ -399,10 +519,50 @@ export function main({
 
   // Generate a object hash of substitutions of modules to use when flattening
   const customSources = {
-    [msgGeneratedDts.getFilePath()]: `${
+    [msgGeneratedDts.getFilePath().replace(/(\.d)?\.ts$/, "")]: `${
       debug ? getSourceComment(msgGeneratedDts, basePath) : ""
     }${msgGeneratedDtsText}\n`
   };
+
+  const prepareForMergeOpts: PrepareFileForMergeOptions = {
+    globalVarName: "window",
+    interfaceName: "Window",
+    targetSourceFile: libDTs
+  };
+
+  const prepareReturn = prepareFileForMerge(prepareForMergeOpts);
+
+  mergeGlobals({
+    basePath,
+    debug,
+    declarationProject,
+    filePath: `${basePath}/js/globals.ts`,
+    inputProject,
+    ignore: ["Deno"],
+    declareAsLet,
+    ...prepareForMergeOpts,
+    prepareReturn
+  });
+
+  log(`Merged "globals" into global scope.`);
+
+  if (additionalGlobals) {
+    for (const additionalGlobal of additionalGlobals) {
+      mergeGlobals({
+        basePath,
+        debug,
+        declarationProject,
+        filePath: `${basePath}/${additionalGlobal}`,
+        inputProject,
+        ignore: ["Deno"],
+        declareAsLet,
+        ...prepareForMergeOpts,
+        prepareReturn
+      });
+    }
+
+    log(`Added additional "globals" into global scope.`);
+  }
 
   flatten({
     basePath,
@@ -410,38 +570,23 @@ export function main({
     debug,
     declarationProject,
     filePath: `${basePath}/js/deno.d.ts`,
-    namespaceName: `"deno"`,
+    globalInterfaceName: "Window",
+    namespaceName: "Deno",
     targetSourceFile: libDTs
   });
 
-  if (!silent) {
-    console.log(`Created module "deno".`);
+  log(`Created module "deno" and namespace Deno.`);
+
+  // Inline any files that were passed in, to be used to add additional libs
+  // which are not part of TypeScript.
+  if (inline && inline.length) {
+    inlineFiles({
+      basePath,
+      debug,
+      inline,
+      targetSourceFile: libDTs
+    });
   }
-
-  mergeGlobal({
-    basePath,
-    debug,
-    declarationProject,
-    filePath: `${basePath}/js/globals.ts`,
-    globalVarName: "window",
-    inputProject,
-    interfaceName: "Window",
-    targetSourceFile: libDTs
-  });
-
-  if (!silent) {
-    console.log(`Merged "globals" into global scope.`);
-  }
-
-  // Since we flatten the namespaces, we don't attempt to import `text-encoding`
-  // so we then need to concatenate that onto the `libDts` so it can stand on
-  // its own.
-  const textEncodingSourceFile = outputProject.getSourceFileOrThrow(
-    textEncodingFilePath
-  );
-  appendSourceFile(textEncodingSourceFile, libDTs);
-  // Removing it from the project so we know the libDTs can stand on its own.
-  outputProject.removeSourceFile(textEncodingSourceFile);
 
   // Add the preamble
   libDTs.insertStatements(0, libPreamble);

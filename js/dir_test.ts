@@ -1,52 +1,51 @@
-// Copyright 2018 the Deno authors. All rights reserved. MIT license.
-import { test, testPerm, assert, assertEqual } from "./test_util.ts";
-import * as deno from "deno";
+// Copyright 2018-2019 the Deno authors. All rights reserved. MIT license.
+import { test, testPerm, assert, assertEquals } from "./test_util.ts";
 
-test(function dirCwdNotNull() {
-  assert(deno.cwd() != null);
+test(function dirCwdNotNull(): void {
+  assert(Deno.cwd() != null);
 });
 
-testPerm({ write: true }, function dirCwdChdirSuccess() {
-  const initialdir = deno.cwd();
-  const path = deno.makeTempDirSync();
-  deno.chdir(path);
-  const current = deno.cwd();
-  if (deno.platform.os === "mac") {
-    assertEqual(current, "/private" + path);
+testPerm({ write: true }, function dirCwdChdirSuccess(): void {
+  const initialdir = Deno.cwd();
+  const path = Deno.makeTempDirSync();
+  Deno.chdir(path);
+  const current = Deno.cwd();
+  if (Deno.build.os === "mac") {
+    assertEquals(current, "/private" + path);
   } else {
-    assertEqual(current, path);
+    assertEquals(current, path);
   }
-  deno.chdir(initialdir);
+  Deno.chdir(initialdir);
 });
 
-testPerm({ write: true }, function dirCwdError() {
+testPerm({ write: true }, function dirCwdError(): void {
   // excluding windows since it throws resource busy, while removeSync
-  if (["linux", "mac"].includes(deno.platform.os)) {
-    const initialdir = deno.cwd();
-    const path = deno.makeTempDirSync();
-    deno.chdir(path);
-    deno.removeSync(path);
+  if (["linux", "mac"].includes(Deno.build.os)) {
+    const initialdir = Deno.cwd();
+    const path = Deno.makeTempDirSync();
+    Deno.chdir(path);
+    Deno.removeSync(path);
     try {
-      deno.cwd();
+      Deno.cwd();
       throw Error("current directory removed, should throw error");
     } catch (err) {
-      if (err instanceof deno.DenoError) {
+      if (err instanceof Deno.DenoError) {
         console.log(err.name === "NotFound");
       } else {
         throw Error("raised different exception");
       }
     }
-    deno.chdir(initialdir);
+    Deno.chdir(initialdir);
   }
 });
 
-testPerm({ write: true }, function dirChdirError() {
-  const path = deno.makeTempDirSync() + "test";
+testPerm({ write: true }, function dirChdirError(): void {
+  const path = Deno.makeTempDirSync() + "test";
   try {
-    deno.chdir(path);
+    Deno.chdir(path);
     throw Error("directory not available, should throw error");
   } catch (err) {
-    if (err instanceof deno.DenoError) {
+    if (err instanceof Deno.DenoError) {
       console.log(err.name === "NotFound");
     } else {
       throw Error("raised different exception");

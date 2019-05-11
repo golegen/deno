@@ -1,4 +1,4 @@
-// Copyright 2018 the Deno authors. All rights reserved. MIT license.
+// Copyright 2018-2019 the Deno authors. All rights reserved. MIT license.
 // @ts-check
 import * as fs from "fs";
 import path from "path";
@@ -9,16 +9,16 @@ import globals from "rollup-plugin-node-globals";
 import nodeResolve from "rollup-plugin-node-resolve";
 import typescriptPlugin from "rollup-plugin-typescript2";
 import { createFilter } from "rollup-pluginutils";
+import replace from "rollup-plugin-replace";
 import typescript from "typescript";
-import MagicString from "magic-string";
 
 const mockPath = path.resolve(__dirname, "js/mock_builtin.js");
-const platformPath = path.resolve(__dirname, "js/platform.ts");
 const tsconfig = path.resolve(__dirname, "tsconfig.json");
 const typescriptPath = path.resolve(
   __dirname,
   "third_party/node_modules/typescript/lib/typescript.js"
 );
+const gnArgs = fs.readFileSync("gen/cli/gn_args.txt", "utf-8").trim();
 
 // We will allow generated modules to be resolvable by TypeScript based on
 // the current build path
@@ -89,40 +89,6 @@ const osNodeToDeno = {
   linux: "linux"
 };
 
-/** Inject deno.platform.arch and deno.platform.os
- * @param {any} param0
- */
-function platform({ include, exclude } = {}) {
-  if (!include) {
-    throw new Error("include option must be passed");
-  }
-
-  const filter = createFilter(include, exclude);
-
-  return {
-    name: "platform",
-    /**
-     * @param {any} _code
-     * @param {string} id
-     */
-    transform(_code, id) {
-      if (filter(id)) {
-        // Adapted from https://github.com/rollup/rollup-plugin-inject/blob/master/src/index.js
-        const arch = archNodeToDeno[process.arch];
-        const os = osNodeToDeno[process.platform];
-        // We do not have to worry about the interface here, because this is just to generate
-        // the actual runtime code, not any type information integrated into Deno
-        const magicString = new MagicString(`
-export const platform = { arch: "${arch}", os:"${os}" };`);
-        return {
-          code: magicString.toString(),
-          map: magicString.generateMap()
-        };
-      }
-    }
-  };
-}
-
 // This plugin resolves at bundle time any generated resources that are
 // in the build path under `gen` and specified with a MID starting with `gen/`.
 // The plugin assumes that the MID needs to have the `.ts` extension appended.
@@ -130,7 +96,7 @@ function resolveGenerated() {
   return {
     name: "resolve-msg-generated",
     resolveId(importee) {
-      if (importee.startsWith("gen/msg_generated")) {
+      if (importee.startsWith("gen/cli/msg_generated")) {
         return path.resolve(`${importee}.ts`);
       }
     }
@@ -220,9 +186,12 @@ export default function makeConfig(commandOptions) {
     },
 
     plugins: [
-      // inject platform and arch from Node
-      platform({
-        include: [platformPath]
+      // inject build and version info
+      replace({
+        ROLLUP_REPLACE_TS_VERSION: typescript.version,
+        ROLLUP_REPLACE_ARCH: archNodeToDeno[process.arch],
+        ROLLUP_REPLACE_OS: osNodeToDeno[process.platform],
+        ROLLUP_REPLACE_GN_ARGS: gnArgs
       }),
 
       // would prefer to use `rollup-plugin-virtual` to inject the empty module, but there
@@ -251,10 +220,7 @@ export default function makeConfig(commandOptions) {
       resolveGenerated(),
 
       // Allows rollup to resolve modules based on Node.js resolution
-      nodeResolve({
-        jsnext: true,
-        main: true
-      }),
+      nodeResolve(),
 
       // Allows rollup to import CommonJS modules
       commonjs({
@@ -263,13 +229,17 @@ export default function makeConfig(commandOptions) {
           // rollup requires them to be explicitly defined to make them available in the
           // bundle
           [typescriptPath]: [
+            "convertCompilerOptionsFromJson",
             "createLanguageService",
+            "formatDiagnostics",
             "formatDiagnosticsWithColorAndContext",
+            "parseConfigFileTextToJson",
+            "version",
+            "Extension",
             "ModuleKind",
             "ScriptKind",
             "ScriptSnapshot",
-            "ScriptTarget",
-            "version"
+            "ScriptTarget"
           ]
         }
       }),

@@ -1,11 +1,14 @@
+// Copyright 2018-2019 the Deno authors. All rights reserved. MIT license.
+
 // This code has been ported almost directly from Go's src/bytes/buffer.go
 // Copyright 2009 The Go Authors. All rights reserved. BSD license.
 // https://github.com/golang/go/blob/master/LICENSE
 
 //import * as io from "./io";
-import { Reader, Writer, ReadResult } from "./io";
+import { Reader, Writer, ReadResult, SyncReader, SyncWriter } from "./io";
 import { assert } from "./util";
 import { TextDecoder } from "./text_encoding";
+import { DenoError, ErrorKind } from "./errors";
 
 // MIN_READ is the minimum ArrayBuffer size passed to a read call by
 // buffer.ReadFrom. As long as the Buffer has at least MIN_READ bytes beyond
@@ -29,16 +32,17 @@ function copyBytes(dst: Uint8Array, src: Uint8Array, off = 0): number {
 /** A Buffer is a variable-sized buffer of bytes with read() and write()
  * methods. Based on https://golang.org/pkg/bytes/#Buffer
  */
-export class Buffer implements Reader, Writer {
+export class Buffer implements Reader, SyncReader, Writer, SyncWriter {
   private buf: Uint8Array; // contents are the bytes buf[off : len(buf)]
   private off = 0; // read at buf[off], write at buf[buf.byteLength]
 
   constructor(ab?: ArrayBuffer) {
     if (ab == null) {
       this.buf = new Uint8Array(0);
-    } else {
-      this.buf = new Uint8Array(ab);
+      return;
     }
+
+    this.buf = new Uint8Array(ab);
   }
 
   /** bytes() returns a slice holding the unread portion of the buffer.
@@ -63,14 +67,14 @@ export class Buffer implements Reader, Writer {
   }
 
   /** empty() returns whether the unread portion of the buffer is empty. */
-  empty() {
+  empty(): boolean {
     return this.buf.byteLength <= this.off;
   }
 
   /** length is a getter that returns the number of bytes of the unread
    * portion of the buffer
    */
-  get length() {
+  get length(): number {
     return this.buf.byteLength - this.off;
   }
 
@@ -123,11 +127,11 @@ export class Buffer implements Reader, Writer {
     this.buf = new Uint8Array(this.buf.buffer, 0, len);
   }
 
-  /** read() reads the next len(p) bytes from the buffer or until the buffer
+  /** readSync() reads the next len(p) bytes from the buffer or until the buffer
    * is drained. The return value n is the number of bytes read. If the
    * buffer has no data to return, eof in the response will be true.
    */
-  async read(p: Uint8Array): Promise<ReadResult> {
+  readSync(p: Uint8Array): ReadResult {
     if (this.empty()) {
       // Buffer is empty, reset to recover space.
       this.reset();
@@ -142,9 +146,19 @@ export class Buffer implements Reader, Writer {
     return { nread, eof: false };
   }
 
-  async write(p: Uint8Array): Promise<number> {
+  async read(p: Uint8Array): Promise<ReadResult> {
+    const rr = this.readSync(p);
+    return Promise.resolve(rr);
+  }
+
+  writeSync(p: Uint8Array): number {
     const m = this._grow(p.byteLength);
     return copyBytes(this.buf, p, m);
+  }
+
+  async write(p: Uint8Array): Promise<number> {
+    const n = this.writeSync(p);
+    return Promise.resolve(n);
   }
 
   /** _grow() grows the buffer to guarantee space for n more bytes.
@@ -170,7 +184,10 @@ export class Buffer implements Reader, Writer {
       // don't spend all our time copying.
       copyBytes(this.buf, this.buf.subarray(this.off));
     } else if (c > MAX_SIZE - c - n) {
-      throw Error("ErrTooLarge"); // TODO DenoError(TooLarge)
+      throw new DenoError(
+        ErrorKind.TooLarge,
+        "The buffer cannot be grown beyond the maximum size."
+      );
     } else {
       // Not enough space anywhere, we need to allocate.
       const buf = new Uint8Array(2 * c + n);
@@ -220,4 +237,41 @@ export class Buffer implements Reader, Writer {
       }
     }
   }
+
+  /** Sync version of `readFrom`
+   */
+  readFromSync(r: SyncReader): number {
+    let n = 0;
+    while (true) {
+      try {
+        const i = this._grow(MIN_READ);
+        this._reslice(i);
+        const fub = new Uint8Array(this.buf.buffer, i);
+        const { nread, eof } = r.readSync(fub);
+        this._reslice(i + nread);
+        n += nread;
+        if (eof) {
+          return n;
+        }
+      } catch (e) {
+        return n;
+      }
+    }
+  }
+}
+
+/** Read `r` until EOF and return the content as `Uint8Array`.
+ */
+export async function readAll(r: Reader): Promise<Uint8Array> {
+  const buf = new Buffer();
+  await buf.readFrom(r);
+  return buf.bytes();
+}
+
+/** Read synchronously `r` until EOF and return the content as `Uint8Array`.
+ */
+export function readAllSync(r: SyncReader): Uint8Array {
+  const buf = new Buffer();
+  buf.readFromSync(r);
+  return buf.bytes();
 }

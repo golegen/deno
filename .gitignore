@@ -4,14 +4,15 @@
 /target/
 *.pyc
 gclient_config.py_entries
-Cargo.lock
 yarn.lock
 # npm deps
 node_modules
 # editor files
 .idea
+.vscode
 # export dir for gh-pages
 /gh-pages
 # temp benchmark data
 /website/data.json
 /website/recent.json
+/js/gen

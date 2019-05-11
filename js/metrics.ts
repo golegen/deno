@@ -1,10 +1,10 @@
-// Copyright 2018 the Deno authors. All rights reserved. MIT license.
-import * as msg from "gen/msg_generated";
+// Copyright 2018-2019 the Deno authors. All rights reserved. MIT license.
+import * as msg from "gen/cli/msg_generated";
 import * as flatbuffers from "./flatbuffers";
 import { assert } from "./util";
 import * as dispatch from "./dispatch";
 
-interface Metrics {
+export interface Metrics {
   opsDispatched: number;
   opsCompleted: number;
   bytesSentControl: number;
@@ -12,15 +12,9 @@ interface Metrics {
   bytesReceived: number;
 }
 
-/** Receive metrics from the privileged side of Deno. */
-export function metrics(): Metrics {
-  return res(dispatch.sendSync(...req()));
-}
-
 function req(): [flatbuffers.Builder, msg.Any, flatbuffers.Offset] {
   const builder = flatbuffers.createBuilder();
-  msg.Metrics.startMetrics(builder);
-  const inner = msg.Metrics.endMetrics(builder);
+  const inner = msg.Metrics.createMetrics(builder);
   return [builder, msg.Any.Metrics, inner];
 }
 
@@ -37,4 +31,21 @@ function res(baseRes: null | msg.Base): Metrics {
     bytesSentData: res.bytesSentData().toFloat64(),
     bytesReceived: res.bytesReceived().toFloat64()
   };
+}
+
+/** Receive metrics from the privileged side of Deno.
+ *
+ *      > console.table(Deno.metrics())
+ *      ┌──────────────────┬────────┐
+ *      │     (index)      │ Values │
+ *      ├──────────────────┼────────┤
+ *      │  opsDispatched   │   9    │
+ *      │   opsCompleted   │   9    │
+ *      │ bytesSentControl │  504   │
+ *      │  bytesSentData   │   0    │
+ *      │  bytesReceived   │  856   │
+ *      └──────────────────┴────────┘
+ */
+export function metrics(): Metrics {
+  return res(dispatch.sendSync(...req()));
 }

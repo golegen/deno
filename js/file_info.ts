@@ -1,5 +1,5 @@
-// Copyright 2018 the Deno authors. All rights reserved. MIT license.
-import * as msg from "gen/msg_generated";
+// Copyright 2018-2019 the Deno authors. All rights reserved. MIT license.
+import * as msg from "gen/cli/msg_generated";
 
 /** A FileInfo describes a file and is returned by `stat`, `lstat`,
  * `statSync`, `lstatSync`.
@@ -83,15 +83,15 @@ export class FileInfoImpl implements FileInfo {
     this.path = path ? path : null;
   }
 
-  isFile() {
+  isFile(): boolean {
     return this._isFile;
   }
 
-  isDirectory() {
+  isDirectory(): boolean {
     return !this._isFile && !this._isSymlink;
   }
 
-  isSymlink() {
+  isSymlink(): boolean {
     return this._isSymlink;
   }
 }

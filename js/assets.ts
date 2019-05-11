@@ -1,13 +1,12 @@
-// Copyright 2018 the Deno authors. All rights reserved. MIT license.
+// Copyright 2018-2019 the Deno authors. All rights reserved. MIT license.
 
-// tslint:disable-next-line:no-reference
+// eslint-disable-next-line @typescript-eslint/no-triple-slash-reference
 /// <reference path="./plugins.d.ts" />
 
 // There is a rollup plugin that will inline any module ending with `!string`
-// tslint:disable:max-line-length
 
 // Generated default library
-import libDts from "gen/lib/lib.deno_runtime.d.ts!string";
+import libDts from "gen/cli/lib/lib.deno_runtime.d.ts!string";
 
 // Static libraries
 import libEs2015Dts from "/third_party/node_modules/typescript/lib/lib.es2015.d.ts!string";
@@ -29,26 +28,24 @@ import libEs2017SharedmemoryDts from "/third_party/node_modules/typescript/lib/l
 import libEs2017StringDts from "/third_party/node_modules/typescript/lib/lib.es2017.string.d.ts!string";
 import libEs2017TypedarraysDts from "/third_party/node_modules/typescript/lib/lib.es2017.typedarrays.d.ts!string";
 import libEs2018Dts from "/third_party/node_modules/typescript/lib/lib.es2018.d.ts!string";
+import libEs2018AsyncIterableDts from "/third_party/node_modules/typescript/lib/lib.es2018.asynciterable.d.ts!string";
 import libEs2018IntlDts from "/third_party/node_modules/typescript/lib/lib.es2018.intl.d.ts!string";
 import libEs2018PromiseDts from "/third_party/node_modules/typescript/lib/lib.es2018.promise.d.ts!string";
 import libEs2018RegexpDts from "/third_party/node_modules/typescript/lib/lib.es2018.regexp.d.ts!string";
+import libEs2019Dts from "/third_party/node_modules/typescript/lib/lib.es2019.d.ts!string";
+import libEs2019ArrayDts from "/third_party/node_modules/typescript/lib/lib.es2019.array.d.ts!string";
+import libEs2019StringDts from "/third_party/node_modules/typescript/lib/lib.es2019.string.d.ts!string";
+import libEs2019SymbolDts from "/third_party/node_modules/typescript/lib/lib.es2019.symbol.d.ts!string";
 import libEs5Dts from "/third_party/node_modules/typescript/lib/lib.es5.d.ts!string";
 import libEsnextArrayDts from "/third_party/node_modules/typescript/lib/lib.esnext.array.d.ts!string";
 import libEsnextAsynciterablesDts from "/third_party/node_modules/typescript/lib/lib.esnext.asynciterable.d.ts!string";
+import libEsnextBigintDts from "/third_party/node_modules/typescript/lib/lib.esnext.bigint.d.ts!string";
 import libEsnextDts from "/third_party/node_modules/typescript/lib/lib.esnext.d.ts!string";
 import libEsnextIntlDts from "/third_party/node_modules/typescript/lib/lib.esnext.intl.d.ts!string";
 import libEsnextSymbolDts from "/third_party/node_modules/typescript/lib/lib.esnext.symbol.d.ts!string";
 
-// Static definitions
-import typescriptDts from "/third_party/node_modules/typescript/lib/typescript.d.ts!string";
-// tslint:enable:max-line-length
-
-// @internal
-export const assetSourceCode: { [key: string]: string } = {
-  // Generated library
-  "lib.deno_runtime.d.ts": libDts,
-
-  // Static libraries
+// Default static libraries for all compile jobs
+const defaultAssets: { [key: string]: string } = {
   "lib.es2015.collection.d.ts": libEs2015CollectionDts,
   "lib.es2015.core.d.ts": libEs2015CoreDts,
   "lib.es2015.d.ts": libEs2015Dts,
@@ -68,16 +65,27 @@ export const assetSourceCode: { [key: string]: string } = {
   "lib.es2017.string.d.ts": libEs2017StringDts,
   "lib.es2017.typedarrays.d.ts": libEs2017TypedarraysDts,
   "lib.es2018.d.ts": libEs2018Dts,
+  "lib.es2018.asynciterable.d.ts": libEs2018AsyncIterableDts,
   "lib.es2018.intl.d.ts": libEs2018IntlDts,
   "lib.es2018.promise.d.ts": libEs2018PromiseDts,
   "lib.es2018.regexp.d.ts": libEs2018RegexpDts,
+  "lib.es2019.d.ts": libEs2019Dts,
+  "lib.es2019.array.d.ts": libEs2019ArrayDts,
+  "lib.es2019.string.d.ts": libEs2019StringDts,
+  "lib.es2019.symbol.d.ts": libEs2019SymbolDts,
   "lib.es5.d.ts": libEs5Dts,
   "lib.esnext.d.ts": libEsnextDts,
   "lib.esnext.array.d.ts": libEsnextArrayDts,
   "lib.esnext.asynciterable.d.ts": libEsnextAsynciterablesDts,
+  "lib.esnext.bigint.d.ts": libEsnextBigintDts,
   "lib.esnext.intl.d.ts": libEsnextIntlDts,
-  "lib.esnext.symbol.d.ts": libEsnextSymbolDts,
+  "lib.esnext.symbol.d.ts": libEsnextSymbolDts
+};
 
-  // Static definitions
-  "typescript.d.ts": typescriptDts
+// assests for normal compile jobs
+// @internal
+export const assetSourceCode: { [key: string]: string } = {
+  // Generated library
+  "lib.deno_runtime.d.ts": libDts,
+  ...defaultAssets
 };

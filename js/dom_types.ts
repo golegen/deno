@@ -1,3 +1,5 @@
+// Copyright 2018-2019 the Deno authors. All rights reserved. MIT license.
+
 /*! ****************************************************************************
 Copyright (c) Microsoft Corporation. All rights reserved.
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use
@@ -12,6 +14,10 @@ MERCHANTABLITY OR NON-INFRINGEMENT.
 See the Apache Version 2.0 License for specific language governing permissions
 and limitations under the License.
 *******************************************************************************/
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+export type BufferSource = ArrayBufferView | ArrayBuffer;
 
 export type HeadersInit =
   | Headers
@@ -34,7 +40,7 @@ type ReferrerPolicy =
   | "origin-when-cross-origin"
   | "unsafe-url";
 export type BlobPart = BufferSource | Blob | string;
-export type FormDataEntryValue = File | string;
+export type FormDataEntryValue = DomFile | string;
 export type EventListenerOrEventListenerObject =
   | EventListener
   | EventListenerObject;
@@ -46,17 +52,8 @@ export interface DomIterable<K, V> {
   [Symbol.iterator](): IterableIterator<[K, V]>;
   forEach(
     callback: (value: V, key: K, parent: this) => void,
-    // tslint:disable-next-line:no-any
     thisArg?: any
   ): void;
-}
-
-interface Element {
-  // TODO
-}
-
-export interface HTMLFormElement {
-  // TODO
 }
 
 type EndingType = "transparent" | "native";
@@ -70,7 +67,7 @@ interface AbortSignalEventMap {
   abort: ProgressEvent;
 }
 
-interface EventTarget {
+export interface EventTarget {
   addEventListener(
     type: string,
     listener: EventListenerOrEventListenerObject | null,
@@ -133,49 +130,80 @@ export interface URLSearchParams {
    */
   forEach(
     callbackfn: (value: string, key: string, parent: URLSearchParams) => void,
-    // tslint:disable-next-line:no-any
     thisArg?: any
   ): void;
 }
 
-interface EventListener {
+export interface EventListener {
   (evt: Event): void;
 }
 
-interface EventInit {
+export interface EventInit {
   bubbles?: boolean;
   cancelable?: boolean;
   composed?: boolean;
 }
 
-interface Event {
-  readonly bubbles: boolean;
-  cancelBubble: boolean;
-  readonly cancelable: boolean;
-  readonly composed: boolean;
-  readonly currentTarget: EventTarget | null;
-  readonly defaultPrevented: boolean;
-  readonly eventPhase: number;
-  readonly isTrusted: boolean;
-  returnValue: boolean;
-  readonly srcElement: Element | null;
-  readonly target: EventTarget | null;
-  readonly timeStamp: number;
-  readonly type: string;
-  deepPath(): EventTarget[];
-  initEvent(type: string, bubbles?: boolean, cancelable?: boolean): void;
-  preventDefault(): void;
-  stopImmediatePropagation(): void;
-  stopPropagation(): void;
-  readonly AT_TARGET: number;
-  readonly BUBBLING_PHASE: number;
-  readonly CAPTURING_PHASE: number;
-  readonly NONE: number;
+export interface CustomEventInit extends EventInit {
+  detail?: any;
 }
 
-export interface File extends Blob {
+export enum EventPhase {
+  NONE = 0,
+  CAPTURING_PHASE = 1,
+  AT_TARGET = 2,
+  BUBBLING_PHASE = 3
+}
+
+export interface EventPath {
+  item: EventTarget;
+  itemInShadowTree: boolean;
+  relatedTarget: EventTarget | null;
+  rootOfClosedTree: boolean;
+  slotInClosedTree: boolean;
+  target: EventTarget | null;
+  touchTargetList: EventTarget[];
+}
+
+export interface Event {
+  readonly type: string;
+  readonly target: EventTarget | null;
+  readonly currentTarget: EventTarget | null;
+  composedPath(): EventPath[];
+
+  readonly eventPhase: number;
+
+  stopPropagation(): void;
+  stopImmediatePropagation(): void;
+
+  readonly bubbles: boolean;
+  readonly cancelable: boolean;
+  preventDefault(): void;
+  readonly defaultPrevented: boolean;
+  readonly composed: boolean;
+
+  readonly isTrusted: boolean;
+  readonly timeStamp: Date;
+}
+
+export interface CustomEvent extends Event {
+  readonly detail: any;
+  initCustomEvent(
+    type: string,
+    bubbles?: boolean,
+    cancelable?: boolean,
+    detail?: any | null
+  ): void;
+}
+
+export interface DomFile extends Blob {
   readonly lastModified: number;
   readonly name: string;
+}
+
+export interface DomFileConstructor {
+  new (bits: BlobPart[], filename: string, options?: FilePropertyBag): DomFile;
+  prototype: DomFile;
 }
 
 export interface FilePropertyBag extends BlobPropertyBag {
@@ -188,22 +216,20 @@ interface ProgressEvent extends Event {
   readonly total: number;
 }
 
-interface EventListenerOptions {
+export interface EventListenerOptions {
   capture?: boolean;
 }
 
-interface AddEventListenerOptions extends EventListenerOptions {
+export interface AddEventListenerOptions extends EventListenerOptions {
   once?: boolean;
   passive?: boolean;
 }
 
 interface AbortSignal extends EventTarget {
   readonly aborted: boolean;
-  // tslint:disable-next-line:no-any
   onabort: ((this: AbortSignal, ev: ProgressEvent) => any) | null;
   addEventListener<K extends keyof AbortSignalEventMap>(
     type: K,
-    // tslint:disable-next-line:no-any
     listener: (this: AbortSignal, ev: AbortSignalEventMap[K]) => any,
     options?: boolean | AddEventListenerOptions
   ): void;
@@ -214,7 +240,6 @@ interface AbortSignal extends EventTarget {
   ): void;
   removeEventListener<K extends keyof AbortSignalEventMap>(
     type: K,
-    // tslint:disable-next-line:no-any
     listener: (this: AbortSignal, ev: AbortSignalEventMap[K]) => any,
     options?: boolean | EventListenerOptions
   ): void;
@@ -229,15 +254,15 @@ export interface ReadableStream {
   readonly locked: boolean;
   cancel(): Promise<void>;
   getReader(): ReadableStreamReader;
+  tee(): [ReadableStream, ReadableStream];
 }
 
-interface EventListenerObject {
+export interface EventListenerObject {
   handleEvent(evt: Event): void;
 }
 
 export interface ReadableStreamReader {
   cancel(): Promise<void>;
-  // tslint:disable-next-line:no-any
   read(): Promise<any>;
   releaseLock(): void;
 }
@@ -292,7 +317,6 @@ export interface Body {
   /** Takes a `Response` stream and reads it to completion. It returns a promise
    * that resolves with the result of parsing the body text as JSON.
    */
-  // tslint:disable-next-line:no-any
   json(): Promise<any>;
   /** Takes a `Response` stream and reads it to completion. It returns a promise
    * that resolves with a `USVString` (text).
@@ -334,7 +358,6 @@ export interface Headers extends DomIterable<string, string> {
   values(): IterableIterator<string>;
   forEach(
     callbackfn: (value: string, key: string, parent: this) => void,
-    // tslint:disable-next-line:no-any
     thisArg?: any
   ): void;
   /** The Symbol.iterator well-known symbol specifies the default
@@ -398,7 +421,6 @@ export interface RequestInit {
   referrer?: string;
   referrerPolicy?: ReferrerPolicy;
   signal?: AbortSignal | null;
-  // tslint:disable-next-line:no-any
   window?: any;
 }
 
@@ -413,16 +435,16 @@ export interface Request extends Body {
    * indicating how the the request will interact with the browser's cache when
    * fetching.
    */
-  readonly cache: RequestCache;
+  readonly cache?: RequestCache;
   /** Returns the credentials mode associated with request, which is a string
    * indicating whether credentials will be sent with the request always, never,
    * or only when sent to a same-origin URL.
    */
-  readonly credentials: RequestCredentials;
+  readonly credentials?: RequestCredentials;
   /** Returns the kind of resource requested by request, (e.g., `document` or
    * `script`).
    */
-  readonly destination: RequestDestination;
+  readonly destination?: RequestDestination;
   /** Returns a Headers object consisting of the headers associated with
    * request.
    *
@@ -434,32 +456,32 @@ export interface Request extends Body {
    * hash of the resource being fetched. Its value consists of multiple hashes
    * separated by whitespace. [SRI]
    */
-  readonly integrity: string;
+  readonly integrity?: string;
   /** Returns a boolean indicating whether or not request is for a history
    * navigation (a.k.a. back-forward navigation).
    */
-  readonly isHistoryNavigation: boolean;
+  readonly isHistoryNavigation?: boolean;
   /** Returns a boolean indicating whether or not request is for a reload
    * navigation.
    */
-  readonly isReloadNavigation: boolean;
+  readonly isReloadNavigation?: boolean;
   /** Returns a boolean indicating whether or not request can outlive the global
    * in which it was created.
    */
-  readonly keepalive: boolean;
+  readonly keepalive?: boolean;
   /** Returns request's HTTP method, which is `GET` by default. */
   readonly method: string;
   /** Returns the mode associated with request, which is a string indicating
    * whether the request will use CORS, or will be restricted to same-origin
    * URLs.
    */
-  readonly mode: RequestMode;
+  readonly mode?: RequestMode;
   /** Returns the redirect mode associated with request, which is a string
    * indicating how redirects for the request will be handled during fetching.
    *
    * A request will follow redirects by default.
    */
-  readonly redirect: RequestRedirect;
+  readonly redirect?: RequestRedirect;
   /** Returns the referrer of request. Its value can be a same-origin URL if
    * explicitly set in init, the empty string to indicate no referrer, and
    * `about:client` when defaulting to the global's default.
@@ -467,16 +489,16 @@ export interface Request extends Body {
    * This is used during fetching to determine the value of the `Referer`
    * header of the request being made.
    */
-  readonly referrer: string;
+  readonly referrer?: string;
   /** Returns the referrer policy associated with request. This is used during
    * fetching to compute the value of the request's referrer.
    */
-  readonly referrerPolicy: ReferrerPolicy;
+  readonly referrerPolicy?: ReferrerPolicy;
   /** Returns the signal associated with request, which is an AbortSignal object
    * indicating whether or not request has been aborted, and its abort event
    * handler.
    */
-  readonly signal: AbortSignal;
+  readonly signal?: AbortSignal;
   /** Returns the URL of request as a string. */
   readonly url: string;
   clone(): Request;
@@ -506,4 +528,74 @@ export interface Response extends Body {
   readonly url: string;
   /** Creates a clone of a `Response` object. */
   clone(): Response;
+}
+
+export interface Location {
+  /**
+   * Returns a DOMStringList object listing the origins of the ancestor browsing
+   * contexts, from the parent browsing context to the top-level browsing
+   * context.
+   */
+  readonly ancestorOrigins: string[];
+  /**
+   * Returns the Location object's URL's fragment (includes leading "#" if
+   * non-empty).
+   * Can be set, to navigate to the same URL with a changed fragment (ignores
+   * leading "#").
+   */
+  hash: string;
+  /**
+   * Returns the Location object's URL's host and port (if different from the
+   * default port for the scheme).  Can be set, to navigate to the same URL with
+   * a changed host and port.
+   */
+  host: string;
+  /**
+   * Returns the Location object's URL's host.  Can be set, to navigate to the
+   * same URL with a changed host.
+   */
+  hostname: string;
+  /**
+   * Returns the Location object's URL.  Can be set, to navigate to the given
+   * URL.
+   */
+  href: string;
+  /** Returns the Location object's URL's origin. */
+  readonly origin: string;
+  /**
+   * Returns the Location object's URL's path.
+   * Can be set, to navigate to the same URL with a changed path.
+   */
+  pathname: string;
+  /**
+   * Returns the Location object's URL's port.
+   * Can be set, to navigate to the same URL with a changed port.
+   */
+  port: string;
+  /**
+   * Returns the Location object's URL's scheme.
+   * Can be set, to navigate to the same URL with a changed scheme.
+   */
+  protocol: string;
+  /**
+   * Returns the Location object's URL's query (includes leading "?" if
+   * non-empty). Can be set, to navigate to the same URL with a changed query
+   * (ignores leading "?").
+   */
+  search: string;
+  /**
+   * Navigates to the given URL.
+   */
+  assign(url: string): void;
+  /**
+   * Reloads the current page.
+   */
+  reload(): void;
+  /** @deprecated */
+  reload(forcedReload: boolean): void;
+  /**
+   * Removes the current page from the session history and navigates to the
+   * given URL.
+   */
+  replace(url: string): void;
 }

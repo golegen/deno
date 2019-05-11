@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright 2018 the Deno authors. All rights reserved. MIT license.
+# Copyright 2018-2019 the Deno authors. All rights reserved. MIT license.
 import os
 import tempfile
 from util import run, root_path
@@ -12,7 +12,7 @@ os.chdir(os.path.join(root_path, "website"))
 # Invalidate the cache.
 run([
     "aws", "cloudfront", "create-invalidation", "--distribution-id",
-    "E3NZSZMS5TZ0OU", "--paths", "/*"
+    "E2HNK8Z3X3JDVG", "--paths", "/*"
 ])
 
 run(["aws", "s3", "sync", ".", "s3://deno.land/"])

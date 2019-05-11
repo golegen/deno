@@ -1,3 +1,4 @@
+// Copyright 2018-2019 the Deno authors. All rights reserved. MIT license.
 // Interfaces 100% copied from Go.
 // Documentation liberally lifted from them too.
 // Thank you! We love Go!
@@ -6,6 +7,14 @@
 export interface ReadResult {
   nread: number;
   eof: boolean;
+}
+
+// Seek whence values.
+// https://golang.org/pkg/io/#pkg-constants
+export enum SeekMode {
+  SEEK_START = 0,
+  SEEK_CURRENT = 1,
+  SEEK_END = 2
 }
 
 // Reader is the interface that wraps the basic read() method.
@@ -40,6 +49,10 @@ export interface Reader {
   read(p: Uint8Array): Promise<ReadResult>;
 }
 
+export interface SyncReader {
+  readSync(p: Uint8Array): ReadResult;
+}
+
 // Writer is the interface that wraps the basic write() method.
 // https://golang.org/pkg/io/#Writer
 export interface Writer {
@@ -54,6 +67,9 @@ export interface Writer {
   write(p: Uint8Array): Promise<number>;
 }
 
+export interface SyncWriter {
+  writeSync(p: Uint8Array): number;
+}
 // https://golang.org/pkg/io/#Closer
 export interface Closer {
   // The behavior of Close after the first call is undefined. Specific
@@ -73,7 +89,11 @@ export interface Seeker {
    * any positive offset is legal, but the behavior of subsequent I/O operations
    * on the underlying object is implementation-dependent.
    */
-  seek(offset: number, whence: number): Promise<void>;
+  seek(offset: number, whence: SeekMode): Promise<void>;
+}
+
+export interface SyncSeeker {
+  seekSync(offset: number, whence: SeekMode): void;
 }
 
 // https://golang.org/pkg/io/#ReadCloser
@@ -118,7 +138,7 @@ export async function copy(dst: Writer, src: Reader): Promise<number> {
 
 /** Turns `r` into async iterator.
  *
- *      for await (const chunk of readerIterator(reader)) {
+ *      for await (const chunk of toAsyncIterator(reader)) {
  *          console.log(chunk)
  *      }
  */
@@ -126,7 +146,7 @@ export function toAsyncIterator(r: Reader): AsyncIterableIterator<Uint8Array> {
   const b = new Uint8Array(1024);
 
   return {
-    [Symbol.asyncIterator]() {
+    [Symbol.asyncIterator](): AsyncIterableIterator<Uint8Array> {
       return this;
     },
 

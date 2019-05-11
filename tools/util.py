@@ -1,10 +1,11 @@
-# Copyright 2018 the Deno authors. All rights reserved. MIT license.
+# Copyright 2018-2019 the Deno authors. All rights reserved. MIT license.
 import os
 import re
 import shutil
 import stat
 import sys
 import subprocess
+import tempfile
 
 RESET = "\x1b[0m"
 FG_RED = "\x1b[31m"
@@ -12,12 +13,15 @@ FG_GREEN = "\x1b[32m"
 
 executable_suffix = ".exe" if os.name == "nt" else ""
 root_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+tests_path = os.path.join(root_path, "tests")
 
 
-def make_env(merge_env={}, env=None):
+def make_env(merge_env=None, env=None):
     if env is None:
         env = os.environ
     env = env.copy()
+    if merge_env is None:
+        merge_env = {}
     for key in merge_env.keys():
         env[key] = merge_env[key]
     return env
@@ -25,19 +29,21 @@ def make_env(merge_env={}, env=None):
 
 def add_env_path(add, env, key="PATH", prepend=False):
     dirs_left = env[key].split(os.pathsep) if key in env else []
-    dirs_right = add.split(os.pathsep) if type(add) is str else add
+    dirs_right = add.split(os.pathsep) if isinstance(add, str) else add
 
     if prepend:
         dirs_left, dirs_right = dirs_right, dirs_left
 
-    for dir in dirs_right:
-        if not dir in dirs_left:
-            dirs_left += [dir]
+    for d in dirs_right:
+        if not d in dirs_left:
+            dirs_left += [d]
 
     env[key] = os.pathsep.join(dirs_left)
 
 
-def run(args, quiet=False, cwd=None, env=None, merge_env={}):
+def run(args, quiet=False, cwd=None, env=None, merge_env=None):
+    if merge_env is None:
+        merge_env = {}
     args[0] = os.path.normpath(args[0])
     if not quiet:
         print " ".join(args)
@@ -48,7 +54,9 @@ def run(args, quiet=False, cwd=None, env=None, merge_env={}):
         sys.exit(rc)
 
 
-def run_output(args, quiet=False, cwd=None, env=None, merge_env={}):
+def run_output(args, quiet=False, cwd=None, env=None, merge_env=None):
+    if merge_env is None:
+        merge_env = {}
     args[0] = os.path.normpath(args[0])
     if not quiet:
         print " ".join(args)
@@ -83,18 +91,6 @@ def red_failed():
 
 def green_ok():
     return "%sok%s" % (FG_GREEN, RESET)
-
-
-def remove_and_symlink(target, name, target_is_dir=False):
-    try:
-        # On Windows, directory symlink can only be removed with rmdir().
-        if os.name == "nt" and os.path.isdir(name):
-            os.rmdir(name)
-        else:
-            os.unlink(name)
-    except:
-        pass
-    symlink(target, name, target_is_dir)
 
 
 def symlink(target, name, target_is_dir=False):
@@ -146,7 +142,9 @@ def touch(fname):
 #   * Recursive glob doesn't exist in python 2.7.
 #   * On windows, `os.walk()` unconditionally follows symlinks.
 #     The `skip`  parameter should be used to avoid recursing through those.
-def find_exts(directories, extensions, skip=[]):
+def find_exts(directories, extensions, skip=None):
+    if skip is None:
+        skip = []
     assert isinstance(directories, list)
     assert isinstance(extensions, list)
     skip = [os.path.normpath(i) for i in skip]
@@ -247,7 +245,7 @@ def enable_ansi_colors_win10():
 
     # Function factory for errcheck callbacks that raise WinError on failure.
     def raise_if(error_result):
-        def check(result, func, args):
+        def check(result, _func, args):
             if result == error_result:
                 raise ctypes.WinError(ctypes.get_last_error())
             return args
@@ -321,7 +319,7 @@ def enable_ansi_colors_win10():
     # Try to set the flag that controls ANSI escape code support.
     try:
         SetConsoleMode(conout, mode.value | ENABLE_VIRTUAL_TERMINAL_PROCESSING)
-    except WindowsError as e:
+    except WindowsError as e:  # pylint:disable=undefined-variable
         if e.winerror == ERROR_INVALID_PARAMETER:
             return False  # Not supported, likely an older version of Windows.
         raise
@@ -331,29 +329,6 @@ def enable_ansi_colors_win10():
     return True
 
 
-def parse_unit_test_output(output, print_to_stdout):
-    first = True
-    expected = None
-    actual = None
-    result = None
-    for line in iter(output.readline, ''):
-        if expected is None:
-            # expect "running 30 tests"
-            expected = extract_number(r'running (\d+) tests', line)
-        elif "test result:" in line:
-            result = line
-        if print_to_stdout:
-            sys.stdout.write(line)
-            sys.stdout.flush()
-    # Check that the number of expected tests equals what was reported at the
-    # bottom.
-    if result:
-        # result should be a string like this:
-        # "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; ..."
-        actual = extract_number(r'(\d+) passed', result)
-    return (actual, expected)
-
-
 def extract_number(pattern, string):
     matches = re.findall(pattern, string)
     if len(matches) != 1:
@@ -361,13 +336,41 @@ def extract_number(pattern, string):
     return int(matches[0])
 
 
+def extract_max_latency_in_milliseconds(pattern, string):
+    matches = re.findall(pattern, string)
+    if len(matches) != 1:
+        return None
+    num = float(matches[0][0])
+    unit = matches[0][1]
+    if (unit == 'ms'):
+        return num
+    elif (unit == 'us'):
+        return num / 1000
+    elif (unit == 's'):
+        return num * 1000
+
+
 def parse_wrk_output(output):
-    req_per_sec = None
+    stats = {}
+    stats['req_per_sec'] = None
+    stats['max_latency'] = None
     for line in output.split("\n"):
-        if req_per_sec is None:
-            req_per_sec = extract_number(r'Requests/sec:\s+(\d+)', line)
-    return req_per_sec
+        if stats['req_per_sec'] is None:
+            stats['req_per_sec'] = extract_number(r'Requests/sec:\s+(\d+)',
+                                                  line)
+        if stats['max_latency'] is None:
+            stats['max_latency'] = extract_max_latency_in_milliseconds(
+                r'Latency(?:\s+(\d+.\d+)([a-z]+)){3}', line)
+    return stats
 
 
 def platform():
     return {"linux2": "linux", "darwin": "mac", "win32": "win"}[sys.platform]
+
+
+def mkdtemp():
+    # On Windows, set the base directory that mkdtemp() uses explicitly. If not,
+    # it'll use the short (8.3) path to the temp dir, which triggers the error
+    # 'TS5009: Cannot find the common subdirectory path for the input files.'
+    temp_dir = os.environ["TEMP"] if os.name == 'nt' else None
+    return tempfile.mkdtemp(dir=temp_dir)

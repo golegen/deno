@@ -1,6 +1,8 @@
-// Copyright 2018 the Deno authors. All rights reserved. MIT license.
+// Copyright 2018-2019 the Deno authors. All rights reserved. MIT license.
 import { flatbuffers } from "flatbuffers";
 import * as util from "./util";
+
+/* eslint-disable @typescript-eslint/camelcase */
 
 // Re-export some types.
 export type Offset = flatbuffers.Offset;
@@ -15,9 +17,9 @@ globalBuilder.inUse = false;
 // This is a wrapper around the real Builder .
 // The purpose is to reuse a single ArrayBuffer for every message.
 // We can do this because the "control" messages sent to the privileged
-// side are guaranteed to be used during the call to libdeno.send().
+// side are guaranteed to be used during the call to Deno.core.send().
 export function createBuilder(): Builder {
-  // tslint:disable-next-line:no-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const gb = globalBuilder as any;
   util.assert(!gb.inUse);
 
